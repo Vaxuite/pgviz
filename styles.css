@@ -50,6 +50,51 @@ header h1 {
 .header-buttons {
     display: flex;
     gap: 8px;
+    align-items: center;
+}
+
+.gemini-api-key-container {
+    display: flex;
+    align-items: center;
+    margin-left: 8px;
+    padding-left: 8px;
+    border-left: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+#gemini-api-key-input-section {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+#gemini-api-key-input-section input::placeholder {
+    color: rgba(255, 255, 255, 0.6);
+}
+
+#gemini-api-key-input-section input:focus {
+    outline: none;
+    border-color: rgba(255, 255, 255, 0.5);
+    background: rgba(255, 255, 255, 0.15);
+}
+
+#gemini-model-selector select {
+    transition: all 0.2s;
+}
+
+#gemini-model-selector select:hover {
+    border-color: rgba(255, 255, 255, 0.5);
+    background: rgba(255, 255, 255, 0.15);
+}
+
+#gemini-model-selector select:focus {
+    outline: none;
+    border-color: rgba(255, 255, 255, 0.6);
+    background: rgba(255, 255, 255, 0.2);
+}
+
+#gemini-model-selector select option {
+    background: #667eea;
+    color: white;
 }
 
 #container {
@@ -303,23 +348,66 @@ svg {
     height: 100%;
 }
 
-/* D3/Dagre Styling */
+/* D3/Dagre Styling - Enhanced */
 .node rect {
-    stroke: #333;
-    fill: #fff;
-    stroke-width: 1.5px;
+    stroke: #4a5568;
+    fill: #ffffff;
+    stroke-width: 2px;
+    rx: 8px;
+    ry: 8px;
+    filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.1));
+    transition: all 0.2s ease;
 }
 
-.edgePath path {
-    stroke: #333;
-    stroke-width: 1.5px;
-    fill: none;
+.node rect:hover {
+    stroke-width: 3px;
+    filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.15));
+    transform: translateY(-1px);
 }
 
 .node text {
-    font-weight: 300;
-    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
-    font-size: 14px;
+    font-weight: 500;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    font-size: 13px;
+    fill: #2d3748;
+    pointer-events: none;
+}
+
+/* Edge/Arrow Styling */
+.edgePath path {
+    stroke: #718096;
+    stroke-width: 2.5px;
+    fill: none;
+    marker-end: url(#arrowhead);
+    filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.1));
+    transition: stroke-width 0.2s ease;
+}
+
+.edgePath path:hover {
+    stroke: #4a5568;
+    stroke-width: 3px;
+}
+
+.edgeLabel {
+    background-color: rgba(255, 255, 255, 0.9);
+    border: 1px solid #e2e8f0;
+    border-radius: 4px;
+    padding: 2px 6px;
+    font-size: 11px;
+    font-weight: 500;
+    color: #4a5568;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+/* Arrow marker definition */
+.marker {
+    fill: #718096;
+    stroke: #718096;
+}
+
+.marker:hover {
+    fill: #4a5568;
+    stroke: #4a5568;
 }
 
 /* Tooltip */

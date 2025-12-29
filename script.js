@@ -43,20 +43,118 @@ async function copyToClipboard(text, event) {
 // Saved Plans Management
 const STORAGE_KEY = 'pgviz_saved_plans';
 const GEMINI_API_KEY_STORAGE = 'pgviz_gemini_api_key';
+const GEMINI_MODEL_STORAGE = 'pgviz_gemini_model';
 
 // Gemini API Integration
 function saveApiKey() {
     const apiKey = document.getElementById('gemini-api-key').value.trim();
     if (apiKey) {
         localStorage.setItem(GEMINI_API_KEY_STORAGE, apiKey);
-        alert('API key saved!');
+        updateApiKeyUI();
+        document.getElementById('gemini-api-key').value = '';
     } else {
         alert('Please enter a valid API key');
     }
 }
 
+function resetApiKey() {
+    localStorage.removeItem(GEMINI_API_KEY_STORAGE);
+    updateApiKeyUI();
+}
+
 function getApiKey() {
     return localStorage.getItem(GEMINI_API_KEY_STORAGE) || '';
+}
+
+function updateApiKeyUI() {
+    const apiKey = getApiKey();
+    const inputSection = document.getElementById('gemini-api-key-input-section');
+    const resetSection = document.getElementById('gemini-api-key-reset-section');
+    const modelSelector = document.getElementById('gemini-model-selector');
+    
+    if (apiKey) {
+        inputSection.style.display = 'none';
+        resetSection.style.display = 'block';
+        modelSelector.style.display = 'block';
+        // Setup model dropdown when API key is available
+        setupGeminiModelDropdown();
+    } else {
+        inputSection.style.display = 'flex';
+        resetSection.style.display = 'none';
+        modelSelector.style.display = 'none';
+    }
+}
+
+function setupGeminiModelDropdown() {
+    const dropdown = document.getElementById('gemini-model-dropdown');
+    
+    // Clear and add the two model options
+    dropdown.innerHTML = '';
+    
+    const flashOption = document.createElement('option');
+    flashOption.value = 'models/gemini-3-flash-preview';
+    flashOption.textContent = 'Flash';
+    dropdown.appendChild(flashOption);
+    
+    const proOption = document.createElement('option');
+    proOption.value = 'models/gemini-3-pro-preview';
+    proOption.textContent = 'Pro';
+    dropdown.appendChild(proOption);
+    
+    // Load saved model or use default (Flash)
+    const savedModel = localStorage.getItem(GEMINI_MODEL_STORAGE);
+    if (savedModel && (savedModel === 'models/gemini-3-flash-preview' || savedModel === 'models/gemini-3-pro-preview')) {
+        dropdown.value = savedModel;
+    } else {
+        // Default to Flash
+        dropdown.value = 'models/gemini-3-flash-preview';
+        localStorage.setItem(GEMINI_MODEL_STORAGE, 'models/gemini-3-flash-preview');
+    }
+    
+    // Add change listener
+    dropdown.onchange = function() {
+        localStorage.setItem(GEMINI_MODEL_STORAGE, this.value);
+    };
+}
+
+function getSelectedModel() {
+    const savedModel = localStorage.getItem(GEMINI_MODEL_STORAGE);
+    if (savedModel && (savedModel === 'models/gemini-3-flash-preview' || savedModel === 'models/gemini-3-pro-preview')) {
+        return savedModel;
+    }
+    // Default fallback to Flash
+    return 'models/gemini-3-flash-preview';
+}
+
+// Store current plan ID for updating with Gemini response
+let currentPlanId = null;
+
+function generateAIAnalysis() {
+    const input = document.getElementById('inputData').value;
+    if (!input.trim()) {
+        alert("Please visualize a plan first.");
+        return;
+    }
+    
+    let originalData;
+    try {
+        originalData = JSON.parse(input);
+    } catch (e) {
+        alert("Invalid JSON format. Please visualize a valid plan first.");
+        return;
+    }
+    
+    // Find the current plan ID if it exists in saved plans
+    const plans = getSavedPlans();
+    const inputString = typeof originalData === 'string' ? originalData : JSON.stringify(originalData);
+    const matchingPlan = plans.find(p => {
+        const planString = typeof p.data === 'string' ? p.data : JSON.stringify(p.data);
+        return planString === inputString;
+    });
+    currentPlanId = matchingPlan ? matchingPlan.id : null;
+    
+    const query = document.getElementById('queryInput').value.trim();
+    analyzePlanWithGemini(originalData, query);
 }
 
 async function analyzePlanWithGemini(planData, query = '') {
@@ -91,8 +189,11 @@ async function analyzePlanWithGemini(planData, query = '') {
 
 Format your response in a clear, readable way with sections.`;
 
+        const selectedModel = getSelectedModel();
+        const modelName = selectedModel.replace('models/', '');
+        
         const response = await fetch(
-            `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${apiKey}`,
+            `https://generativelanguage.googleapis.com/v1beta/${selectedModel}:generateContent?key=${apiKey}`,
             {
                 method: 'POST',
                 headers: {
@@ -118,6 +219,11 @@ Format your response in a clear, readable way with sections.`;
 
         responseBox.className = 'gemini-response-box';
         responseBox.innerHTML = `<div class="response-content">${formatGeminiResponse(geminiText)}</div>`;
+        
+        // Save the Gemini response to the current plan if it exists
+        if (currentPlanId) {
+            updatePlanWithGeminiResponse(currentPlanId, geminiText);
+        }
     } catch (error) {
         console.error('Gemini API error:', error);
         responseBox.className = 'gemini-response-box error';
@@ -173,27 +279,96 @@ function extractPlanSummary(planData) {
 }
 
 function formatGeminiResponse(text) {
-    // Convert markdown-like formatting to HTML
-    let html = text
-        // Headers
-        .replace(/^### (.*$)/gim, '<h4>$1</h4>')
-        .replace(/^## (.*$)/gim, '<h3>$1</h3>')
-        .replace(/^# (.*$)/gim, '<h3>$1</h3>')
-        // Bold
-        .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-        // Code blocks
-        .replace(/```([\s\S]*?)```/g, '<pre><code>$1</code></pre>')
-        // Inline code
-        .replace(/`([^`]+)`/g, '<code>$1</code>')
-        // Lists
-        .replace(/^\d+\.\s+(.*)$/gim, '<li>$1</li>')
-        .replace(/^[-*]\s+(.*)$/gim, '<li>$1</li>')
-        // Line breaks
-        .replace(/\n\n/g, '</p><p>')
-        .replace(/\n/g, '<br>');
+    // Split text into lines for better processing
+    const lines = text.split('\n');
+    const processedLines = [];
+    let inList = false;
     
-    // Wrap list items in ul tags
-    html = html.replace(/(<li>.*<\/li>)/s, '<ul>$1</ul>');
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        const trimmed = line.trim();
+        
+        // Check if this is a list item (bullet or numbered)
+        const isBullet = /^[\*\-\u2022•]\s+/.test(trimmed);
+        const isNumbered = /^\d+\.\s+/.test(trimmed);
+        const isListItem = isBullet || isNumbered;
+        
+        if (isListItem) {
+            // Extract content after bullet/number
+            let content = trimmed.replace(/^[\*\-\u2022•]\s+/, '').replace(/^\d+\.\s+/, '');
+            
+            // Process bold and code within list items
+            content = content
+                .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+                .replace(/`([^`]+)`/g, '<code>$1</code>');
+            
+            if (!inList) {
+                // Start a new list
+                processedLines.push('<ul>');
+                inList = true;
+            }
+            processedLines.push(`<li>${content}</li>`);
+        } else {
+            // Not a list item
+            if (inList) {
+                // Close the list
+                processedLines.push('</ul>');
+                inList = false;
+            }
+            
+            // Process headers
+            if (/^#### /.test(trimmed)) {
+                let headerText = trimmed.replace(/^#### /, '');
+                // Process bold and code in headers too
+                headerText = headerText
+                    .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+                    .replace(/`([^`]+)`/g, '<code>$1</code>');
+                processedLines.push(`<h5 style="font-size: 1em; font-weight: 600; color: var(--accent); margin-top: 16px; margin-bottom: 8px;">${headerText}</h5>`);
+            } else if (/^### /.test(trimmed)) {
+                let headerText = trimmed.replace(/^### /, '');
+                headerText = headerText
+                    .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+                    .replace(/`([^`]+)`/g, '<code>$1</code>');
+                processedLines.push(`<h4>${headerText}</h4>`);
+            } else if (/^## /.test(trimmed)) {
+                let headerText = trimmed.replace(/^## /, '');
+                headerText = headerText
+                    .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+                    .replace(/`([^`]+)`/g, '<code>$1</code>');
+                processedLines.push(`<h3>${headerText}</h3>`);
+            } else if (/^# /.test(trimmed)) {
+                let headerText = trimmed.replace(/^# /, '');
+                headerText = headerText
+                    .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+                    .replace(/`([^`]+)`/g, '<code>$1</code>');
+                processedLines.push(`<h3>${headerText}</h3>`);
+            } else if (trimmed === '---' || trimmed === '') {
+                // Skip horizontal rules and empty lines
+                processedLines.push('');
+            } else {
+                // Regular text - process bold and code (use non-greedy and handle multiple occurrences)
+                let processedLine = trimmed
+                    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+                    .replace(/`([^`]+)`/g, '<code>$1</code>');
+                processedLines.push(processedLine);
+            }
+        }
+    }
+    
+    // Close any open list
+    if (inList) {
+        processedLines.push('</ul>');
+    }
+    
+    // Join lines and handle code blocks
+    let html = processedLines.join('\n');
+    
+    // Process code blocks (multiline)
+    html = html.replace(/```([\s\S]*?)```/g, '<pre><code>$1</code></pre>');
+    
+    // Convert line breaks to HTML
+    html = html.replace(/\n\n+/g, '</p><p>');
+    html = html.replace(/\n/g, '<br>');
     
     return '<p>' + html + '</p>';
 }
@@ -250,7 +425,7 @@ function getSavedPlans() {
     return saved ? JSON.parse(saved) : [];
 }
 
-function savePlan(planData, query = '') {
+function savePlan(planData, query = '', geminiResponse = '') {
     const plans = getSavedPlans();
     const planName = `Plan ${new Date().toLocaleString()}`;
     const newPlan = {
@@ -258,6 +433,7 @@ function savePlan(planData, query = '') {
         name: planName,
         data: planData,
         query: query || '',
+        geminiResponse: geminiResponse || '',
         timestamp: new Date().toISOString()
     };
     plans.unshift(newPlan); // Add to beginning
@@ -265,6 +441,15 @@ function savePlan(planData, query = '') {
     const limitedPlans = plans.slice(0, 50);
     localStorage.setItem(STORAGE_KEY, JSON.stringify(limitedPlans));
     renderSavedPlansList();
+}
+
+function updatePlanWithGeminiResponse(planId, geminiResponse) {
+    const plans = getSavedPlans();
+    const planIndex = plans.findIndex(p => p.id === planId);
+    if (planIndex !== -1) {
+        plans[planIndex].geminiResponse = geminiResponse;
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(plans));
+    }
 }
 
 function deletePlan(planId, event) {
@@ -283,6 +468,7 @@ function loadPlanFromStorage(planId, event) {
     const plans = getSavedPlans();
     const plan = plans.find(p => p.id === planId);
     if (plan) {
+        currentPlanId = planId;
         const jsonString = typeof plan.data === 'string' ? plan.data : JSON.stringify(plan.data, null, 2);
         document.getElementById('inputData').value = jsonString;
         // Load query if it exists
@@ -292,6 +478,17 @@ function loadPlanFromStorage(planId, event) {
             document.getElementById('queryInput').value = '';
         }
         renderGraph(false);
+        
+        // Load and display Gemini response if it exists
+        if (plan.geminiResponse) {
+            const responseBox = document.getElementById('gemini-response');
+            responseBox.className = 'gemini-response-box';
+            responseBox.innerHTML = `<div class="response-content">${formatGeminiResponse(plan.geminiResponse)}</div>`;
+        } else {
+            const responseBox = document.getElementById('gemini-response');
+            responseBox.className = 'gemini-response-box';
+            responseBox.innerHTML = '<div class="empty-state">No AI analysis available for this plan. Click "Generate AI Analysis" to create one.</div>';
+        }
     }
     return false;
 }
@@ -384,6 +581,11 @@ function renderGraph(save = true) {
         // Save the plan to localStorage
         const query = document.getElementById('queryInput').value.trim();
         savePlan(originalData, query);
+        // Set currentPlanId to the newly saved plan
+        const plans = getSavedPlans();
+        if (plans.length > 0) {
+            currentPlanId = plans[0].id; // Most recent plan is first
+        }
     }
 
     // Initialize Dagre Graph
@@ -448,31 +650,47 @@ function renderGraph(save = true) {
         // Calculate percentage of total time based on exclusive time
         const percentage = totalTime > 0 ? ((exclusiveTime / totalTime) * 100).toFixed(1) : '0.0';
 
-        // HTML Label for the Node
+        // HTML Label for the Node - Enhanced styling
         const label = `
-            <div style="padding: 5px; text-align: center;">
-                <strong>${node['Node Type']}</strong><br/>
-                <span style="font-size: 0.8em">${exclusiveTime.toFixed(3)}ms</span><br/>
-                <span style="font-size: 0.75em; color: #666;">${percentage}%</span>
+            <div style="padding: 10px 12px; text-align: center; min-width: 120px;">
+                <div style="font-weight: 600; font-size: 14px; color: #2d3748; margin-bottom: 6px; letter-spacing: 0.3px;">
+                    ${node['Node Type']}
+                </div>
+                <div style="font-size: 13px; color: #4a5568; font-weight: 500; margin-bottom: 4px;">
+                    ${exclusiveTime.toFixed(3)}ms
+                </div>
+                <div style="font-size: 11px; color: #718096; font-weight: 400;">
+                    ${percentage}% of total
+                </div>
             </div>
         `;
+
+        // Enhanced node styling with gradient effect
+        const strokeColor = intensity > 0.1 ? `rgb(${r}, ${Math.max(ga - 20, 0)}, ${Math.max(ba - 20, 0)})` : '#4a5568';
+        const nodeStyle = `fill: ${intensity > 0.1 ? color : '#ffffff'}; 
+                          stroke: ${strokeColor}; 
+                          stroke-width: 2px;
+                          filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.1));`;
 
         // Add Node
         g.setNode(id, {
             labelType: "html",
             label: label,
-            rx: 5, ry: 5,
-            style: `fill: ${intensity > 0.1 ? color : '#fff'}; stroke: #333;`,
+            rx: 8, ry: 8,
+            style: nodeStyle,
             // Store full data for tooltip
             customData: node,
             exclusiveTime: exclusiveTime.toFixed(3)
         });
 
-        // Add Edge
+        // Add Edge with enhanced styling
         if (parentId) {
             g.setEdge(parentId, id, {
                 label: node['Parent Relationship'] || "",
-                curve: d3.curveBasis
+                curve: d3.curveBasis,
+                style: "stroke: #718096; stroke-width: 2.5px; fill: none;",
+                arrowheadStyle: "fill: #718096; stroke: #718096;",
+                arrowhead: "normal"
             });
         }
 
@@ -500,12 +718,39 @@ function renderGraph(save = true) {
         }
     });
 
+    // Add arrow marker definitions to SVG if not already present
+    let defs = svg.select("defs");
+    if (defs.empty()) {
+        defs = svg.append("defs");
+    }
+    
+    // Create or update arrow marker
+    let marker = defs.select("marker#arrowhead");
+    if (marker.empty()) {
+        marker = defs.append("marker")
+            .attr("id", "arrowhead")
+            .attr("viewBox", "0 0 10 10")
+            .attr("refX", 8)
+            .attr("refY", 5)
+            .attr("markerWidth", 8)
+            .attr("markerHeight", 8)
+            .attr("orient", "auto");
+        
+        marker.append("path")
+            .attr("d", "M 0 0 L 10 5 L 0 10 z")
+            .attr("fill", "#718096")
+            .attr("stroke", "none");
+    }
+    
     // Create a fresh renderer instance each time
     const render = new dagreD3.render();
     
     // Render the graph - dagre will calculate layout and node sizes
     // The render function measures HTML labels and calculates node dimensions
     render(inner, g);
+    
+    // Enhance edges after rendering - ensure arrow markers are applied
+    inner.selectAll("path.edgePath").attr("marker-end", "url(#arrowhead)");
 
     // Access graph dimensions to ensure layout is complete
     // This forces dagre to finish its calculations
@@ -556,9 +801,7 @@ function renderGraph(save = true) {
             document.getElementById("tooltip").style.opacity = 0;
         });
 
-    // Analyze plan with Gemini AI
-    const query = document.getElementById('queryInput').value.trim();
-    analyzePlanWithGemini(originalData, query);
+    // AI analysis is now triggered manually via the "Generate AI Analysis" button
 }
 
 // Load sample data on init for demonstration
@@ -566,14 +809,16 @@ window.onload = function() {
     // Load and render saved plans
     renderSavedPlansList();
     
-    // Load saved API key if available
-    const savedApiKey = getApiKey();
-    if (savedApiKey) {
-        document.getElementById('gemini-api-key').value = savedApiKey;
-    }
+    // Update API key UI based on saved state
+    updateApiKeyUI();
     
     // Initialize resizable Gemini pane
     initGeminiPaneResize();
+    
+    // Setup model dropdown if API key is already set
+    if (getApiKey()) {
+        setupGeminiModelDropdown();
+    }
     
     const sample = [
         {
