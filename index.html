@@ -52,6 +52,7 @@
         </div>
         <div id="ai-analysis-tab" class="tab-content">
             <h2>AI Analysis</h2>
+            <button onclick="generateAIAnalysis()" class="copy-btn" style="width: 100%; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); margin-bottom: 15px;">Generate AI Analysis</button>
             <div id="gemini-response-container">
                 <div id="gemini-response" class="gemini-response-box">
                     <div class="empty-state">AI analysis will appear here after visualizing a plan</div>
@@ -84,7 +85,6 @@
             <label for="inputData" style="font-size: 0.875rem; color: #6c757d; margin-bottom: 8px; display: block; font-weight: 500;">Query Plan (JSON)</label>
             <textarea id="inputData" placeholder='[ { "Plan": { ... } } ]'></textarea>
             <button onclick="renderGraph()" style="width: 100%; margin-bottom: 8px;">Visualize Plan</button>
-            <button onclick="generateAIAnalysis()" class="copy-btn" style="width: 100%; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">Generate AI Analysis</button>
         </div>
     </div>
 </div>
