@@ -486,9 +486,10 @@
         } catch (e) {
             return alert("Invalid JSON format. Check console for details.");
         }
-        
-        // Save the plan to localStorage
-        savePlan(originalData);
+        if (save) {
+            // Save the plan to localStorage
+            savePlan(originalData);
+        }
 
         // Initialize Dagre Graph
         const g = new dagreD3.graphlib.Graph().setGraph({});
