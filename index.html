@@ -12,7 +12,13 @@
 <body>
 
 <header>
-    <h1>Postgres Plan Visualizer</h1>
+    <div class="header-left">
+        <h1>Postgres Plan Visualizer</h1>
+        <div class="header-tabs">
+            <button class="tab-btn active" data-tab="saved-plans">Saved Plans</button>
+            <button class="tab-btn" data-tab="ai-analysis">AI Analysis</button>
+        </div>
+    </div>
     <div class="header-buttons">
         <button onclick="copyToClipboard(setup, event)" class="copy-btn" id="copySetupBtn">Copy PSQL Setup</button>
         <button onclick="copyToClipboard(explain, event)" class="copy-btn" id="copyExplainBtn">Copy Explain</button>
@@ -36,10 +42,21 @@
 </header>
 
 <div id="container">
-    <div id="saved-plans-pane">
-        <h2>Saved Plans</h2>
-        <div id="saved-plans-list">
-            <div class="empty-state">No saved plans yet</div>
+    <div id="left-sidebar">
+        <div id="left-sidebar-resize-handle"></div>
+        <div id="saved-plans-tab" class="tab-content active">
+            <h2>Saved Plans</h2>
+            <div id="saved-plans-list">
+                <div class="empty-state">No saved plans yet</div>
+            </div>
+        </div>
+        <div id="ai-analysis-tab" class="tab-content">
+            <h2>AI Analysis</h2>
+            <div id="gemini-response-container">
+                <div id="gemini-response" class="gemini-response-box">
+                    <div class="empty-state">AI analysis will appear here after visualizing a plan</div>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -68,18 +85,6 @@
             <textarea id="inputData" placeholder='[ { "Plan": { ... } } ]'></textarea>
             <button onclick="renderGraph()" style="width: 100%; margin-bottom: 8px;">Visualize Plan</button>
             <button onclick="generateAIAnalysis()" class="copy-btn" style="width: 100%; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">Generate AI Analysis</button>
-        </div>
-    </div>
-</div>
-
-<div id="gemini-pane">
-    <div id="gemini-resize-handle"></div>
-    <div id="gemini-pane-header">
-        <h2>AI Analysis</h2>
-    </div>
-    <div id="gemini-response-container">
-        <div id="gemini-response" class="gemini-response-box">
-            <div class="empty-state">AI analysis will appear here after visualizing a plan</div>
         </div>
     </div>
 </div>

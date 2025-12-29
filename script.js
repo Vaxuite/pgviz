@@ -408,49 +408,73 @@ function formatGeminiResponse(text) {
     return html;
 }
 
-// Resizable Gemini pane
-const GEMINI_PANE_HEIGHT_STORAGE = 'pgviz_gemini_pane_height';
-
-function initGeminiPaneResize() {
-    const pane = document.getElementById('gemini-pane');
-    const resizeHandle = document.getElementById('gemini-resize-handle');
+// Tab switching functionality
+function initTabs() {
+    const tabButtons = document.querySelectorAll('.tab-btn');
+    const tabContents = document.querySelectorAll('.tab-content');
     
-    // Load saved height
-    const savedHeight = localStorage.getItem(GEMINI_PANE_HEIGHT_STORAGE);
-    if (savedHeight) {
-        pane.style.height = savedHeight + 'px';
+    tabButtons.forEach(btn => {
+        btn.addEventListener('click', () => {
+            const targetTab = btn.getAttribute('data-tab');
+            
+            // Update active tab button
+            tabButtons.forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            
+            // Update active tab content
+            tabContents.forEach(content => content.classList.remove('active'));
+            if (targetTab === 'saved-plans') {
+                document.getElementById('saved-plans-tab').classList.add('active');
+            } else if (targetTab === 'ai-analysis') {
+                document.getElementById('ai-analysis-tab').classList.add('active');
+            }
+        });
+    });
+}
+
+// Resizable left sidebar
+const LEFT_SIDEBAR_WIDTH_STORAGE = 'pgviz_left_sidebar_width';
+
+function initLeftSidebarResize() {
+    const sidebar = document.getElementById('left-sidebar');
+    const resizeHandle = document.getElementById('left-sidebar-resize-handle');
+    
+    // Load saved width
+    const savedWidth = localStorage.getItem(LEFT_SIDEBAR_WIDTH_STORAGE);
+    if (savedWidth) {
+        sidebar.style.width = savedWidth + 'px';
     }
     
     let isResizing = false;
-    let startY = 0;
-    let startHeight = 0;
+    let startX = 0;
+    let startWidth = 0;
     
     resizeHandle.addEventListener('mousedown', (e) => {
         isResizing = true;
-        startY = e.clientY;
-        startHeight = parseInt(window.getComputedStyle(pane).height, 10);
-        pane.style.userSelect = 'none';
-        document.body.style.cursor = 'row-resize';
+        startX = e.clientX;
+        startWidth = parseInt(window.getComputedStyle(sidebar).width, 10);
+        sidebar.style.userSelect = 'none';
+        document.body.style.cursor = 'col-resize';
         e.preventDefault();
     });
     
     document.addEventListener('mousemove', (e) => {
         if (!isResizing) return;
         
-        const deltaY = startY - e.clientY; // Inverted because we're resizing from top
-        const newHeight = Math.max(150, Math.min(window.innerHeight * 0.8, startHeight + deltaY));
-        pane.style.height = newHeight + 'px';
+        const deltaX = e.clientX - startX;
+        const newWidth = Math.max(200, Math.min(1000, startWidth + deltaX));
+        sidebar.style.width = newWidth + 'px';
         e.preventDefault();
     });
     
     document.addEventListener('mouseup', () => {
         if (isResizing) {
             isResizing = false;
-            pane.style.userSelect = '';
+            sidebar.style.userSelect = '';
             document.body.style.cursor = '';
-            // Save height to localStorage
-            const currentHeight = parseInt(window.getComputedStyle(pane).height, 10);
-            localStorage.setItem(GEMINI_PANE_HEIGHT_STORAGE, currentHeight.toString());
+            // Save width to localStorage
+            const currentWidth = parseInt(window.getComputedStyle(sidebar).width, 10);
+            localStorage.setItem(LEFT_SIDEBAR_WIDTH_STORAGE, currentWidth.toString());
         }
     });
 }
@@ -684,6 +708,9 @@ function renderGraph(save = true) {
 
         // Calculate percentage of total time based on exclusive time
         const percentage = totalTime > 0 ? ((exclusiveTime / totalTime) * 100).toFixed(1) : '0.0';
+        
+        // Calculate rows fetched (rows * loops)
+        const rowsFetched = (node['Actual Rows'] || 0) * (node['Actual Loops'] || 1);
 
         // HTML Label for the Node - Enhanced styling
         const label = `
@@ -691,10 +718,13 @@ function renderGraph(save = true) {
                 <div style="font-weight: 600; font-size: 14px; color: #2d3748; margin-bottom: 6px; letter-spacing: 0.3px;">
                     ${node['Node Type']}
                 </div>
-                <div style="font-size: 13px; color: #4a5568; font-weight: 500; margin-bottom: 4px;">
+                <div style="font-size: 13px; color: rgb(0, 0, 0); font-weight: 500; margin-bottom: 4px;">
                     ${exclusiveTime.toFixed(3)}ms
                 </div>
-                <div style="font-size: 11px; color: #718096; font-weight: 400;">
+                <div style="font-size: 11px; color:rgb(0, 0, 0); font-weight: 500; margin-bottom: 4px;">
+                    ${rowsFetched.toLocaleString()} rows
+                </div>
+                <div style="font-size: 11px; color: rgb(0, 0, 0); font-weight: 500;">
                     ${percentage}% of total
                 </div>
             </div>
@@ -801,19 +831,19 @@ function renderGraph(save = true) {
         svg.call(zoom.transform, d3.zoomIdentity.translate(xOffset, 20).scale(initialScale));
     });
 
-    // Setup Tooltips interactions - remove old handlers first
-    inner.selectAll("g.node")
-        .on("mouseover", null)
-        .on("mousemove", null)
-        .on("mouseout", null);
-
-    inner.selectAll("g.node")
-        .on("mouseover", function(v) {
-            const nodeData = g.node(v);
-            if (!nodeData) return;
-            const raw = nodeData.customData;
-            const tooltip = document.getElementById("tooltip");
-
+    // Setup Tooltips interactions using native event listeners for better event access
+    inner.selectAll("g.node").each(function(v) {
+        const nodeElement = this;
+        const nodeData = g.node(v);
+        if (!nodeData) return;
+        
+        const raw = nodeData.customData;
+        const tooltip = document.getElementById("tooltip");
+        const graphPane = document.getElementById("graph-pane");
+        
+        if (!tooltip || !graphPane) return;
+        
+        const showTooltip = (event) => {
             let content = `<strong>${raw['Node Type']}</strong><hr/>`;
             content += `Total Time: ${raw['Actual Total Time'] || 'N/A'} ms<br/>`;
             content += `Exclusive: <b>${nodeData.exclusiveTime} ms</b><br/>`;
@@ -826,29 +856,42 @@ function renderGraph(save = true) {
 
             tooltip.innerHTML = content;
             tooltip.style.opacity = 1;
-        })
-        .on("mousemove", function() {
-            const tooltip = document.getElementById("tooltip");
-            tooltip.style.left = (d3.event.pageX + 15) + "px";
-            tooltip.style.top = (d3.event.pageY - 10) + "px";
-        })
-        .on("mouseout", function() {
-            document.getElementById("tooltip").style.opacity = 0;
-        });
+        };
+        
+        const moveTooltip = (event) => {
+            const paneRect = graphPane.getBoundingClientRect();
+            const mouseX = event.clientX - paneRect.left;
+            const mouseY = event.clientY - paneRect.top;
+            
+            tooltip.style.left = (mouseX + 15) + "px";
+            tooltip.style.top = (mouseY - 10) + "px";
+        };
+        
+        const hideTooltip = () => {
+            tooltip.style.opacity = 0;
+        };
+        
+        nodeElement.addEventListener("mouseover", showTooltip);
+        nodeElement.addEventListener("mousemove", moveTooltip);
+        nodeElement.addEventListener("mouseout", hideTooltip);
+    });
 
     // AI analysis is now triggered manually via the "Generate AI Analysis" button
 }
 
 // Load sample data on init for demonstration
 window.onload = function() {
+    // Initialize tabs
+    initTabs();
+    
     // Load and render saved plans
     renderSavedPlansList();
     
     // Update API key UI based on saved state
     updateApiKeyUI();
     
-    // Initialize resizable Gemini pane
-    initGeminiPaneResize();
+    // Initialize resizable left sidebar
+    initLeftSidebarResize();
     
     // Setup model dropdown if API key is already set
     if (getApiKey()) {
