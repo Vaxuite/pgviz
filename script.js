@@ -810,6 +810,15 @@ function renderGraph(save = true) {
     // Create a fresh renderer instance each time
     const render = new dagreD3.render();
     
+    // Get the graph pane dimensions to set SVG size
+    const graphPane = document.getElementById("graph-pane");
+    const paneRect = graphPane.getBoundingClientRect();
+    
+    // Set explicit SVG dimensions
+    svg.attr("width", paneRect.width)
+       .attr("height", paneRect.height)
+       .attr("viewBox", `0 0 ${paneRect.width} ${paneRect.height}`);
+    
     // Render the graph - dagre will calculate layout and node sizes
     // The render function measures HTML labels and calculates node dimensions
     render(inner, g);
@@ -826,9 +835,11 @@ function renderGraph(save = true) {
     requestAnimationFrame(() => {
         const svgRect = svg.node().getBoundingClientRect();
         const svgWidth = svgRect.width;
+        const svgHeight = svgRect.height;
         const initialScale = 0.75;
         const xOffset = Math.max(0, (svgWidth - graphWidth * initialScale) / 2);
-        svg.call(zoom.transform, d3.zoomIdentity.translate(xOffset, 20).scale(initialScale));
+        const yOffset = Math.max(20, (svgHeight - graphHeight * initialScale) / 2);
+        svg.call(zoom.transform, d3.zoomIdentity.translate(xOffset, yOffset).scale(initialScale));
     });
 
     // Setup Tooltips interactions using native event listeners for better event access
@@ -879,6 +890,19 @@ function renderGraph(save = true) {
     // AI analysis is now triggered manually via the "Generate AI Analysis" button
 }
 
+// Function to update SVG size
+function updateSVGSize() {
+    const graphPane = document.getElementById("graph-pane");
+    if (!graphPane) return;
+    
+    const paneRect = graphPane.getBoundingClientRect();
+    if (paneRect.width > 0 && paneRect.height > 0) {
+        svg.attr("width", paneRect.width)
+               .attr("height", paneRect.height)
+               .attr("viewBox", `0 0 ${paneRect.width} ${paneRect.height}`);
+    }
+}
+
 // Load sample data on init for demonstration
 window.onload = function() {
     // Initialize tabs
@@ -897,6 +921,23 @@ window.onload = function() {
     if (getApiKey()) {
         setupGeminiModelDropdown();
     }
+    
+    // Update SVG size on window resize
+    let resizeTimeout;
+    window.addEventListener('resize', function() {
+        clearTimeout(resizeTimeout);
+        resizeTimeout = setTimeout(function() {
+            updateSVGSize();
+            // Re-render graph if there's data
+            const input = document.getElementById('inputData').value;
+            if (input.trim()) {
+                renderGraph(false); // Don't save on resize-triggered render
+            }
+        }, 250);
+    });
+    
+    // Initial SVG size update
+    setTimeout(updateSVGSize, 100);
     
     const sample = [
         {

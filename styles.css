@@ -29,6 +29,14 @@ body {
     overflow: hidden;
 }
 
+@media (max-width: 768px) {
+    body {
+        overflow-y: auto;
+        height: auto;
+        min-height: 100vh;
+    }
+}
+
 header {
     background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
     color: white;
@@ -259,15 +267,22 @@ header h1 {
     border-radius: 50%;
     width: 24px;
     height: 24px;
+    min-width: 24px;
+    min-height: 24px;
+    max-width: 24px;
+    max-height: 24px;
     cursor: pointer;
     font-size: 14px;
     display: flex;
     align-items: center;
     justify-content: center;
     padding: 0;
+    margin: 0;
     transition: all 0.2s;
     font-weight: bold;
     line-height: 1;
+    box-sizing: border-box;
+    flex-shrink: 0;
 }
 
 .saved-plan-delete:hover {
@@ -429,6 +444,13 @@ button.copy-btn.copied {
 svg {
     width: 100%;
     height: 100%;
+    display: block;
+}
+
+#svg-canvas {
+    width: 100%;
+    height: 100%;
+    display: block;
 }
 
 /* D3/Dagre Styling - Enhanced */
@@ -627,5 +649,201 @@ svg {
     outline: none;
     border-color: var(--accent);
     box-shadow: 0 0 0 3px rgba(13, 110, 253, 0.1);
+}
+
+/* Responsive Design for Mobile */
+@media (max-width: 768px) {
+    header {
+        flex-direction: column;
+        align-items: flex-start;
+        padding: 1rem;
+        gap: 12px;
+    }
+
+    .header-left {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 12px;
+        width: 100%;
+    }
+
+    header h1 {
+        font-size: 1.25rem;
+    }
+
+    .header-tabs {
+        width: 100%;
+        gap: 6px;
+    }
+
+    .tab-btn {
+        flex: 1;
+        padding: 10px 12px;
+        font-size: 13px;
+    }
+
+    .header-buttons {
+        flex-wrap: wrap;
+        width: 100%;
+        gap: 6px;
+    }
+
+    .header-buttons button {
+        flex: 1;
+        min-width: 120px;
+        padding: 10px 12px;
+        font-size: 12px;
+    }
+
+    .gemini-api-key-container {
+        flex-wrap: wrap;
+        width: 100%;
+        margin-left: 0;
+        padding-left: 0;
+        border-left: none;
+        border-top: 1px solid rgba(255, 255, 255, 0.2);
+        padding-top: 12px;
+        margin-top: 12px;
+    }
+
+    #gemini-api-key-input-section {
+        flex-wrap: wrap;
+        width: 100%;
+    }
+
+    #gemini-api-key-input-section input {
+        width: 100%;
+        margin-right: 0;
+        margin-bottom: 8px;
+    }
+
+    #container {
+        flex-direction: column;
+        overflow-y: auto;
+        height: auto;
+    }
+
+    #left-sidebar {
+        width: 100%;
+        max-width: 100%;
+        min-width: 100%;
+        border-right: none;
+        border-bottom: 1px solid var(--border-color);
+        max-height: 50vh;
+        overflow-y: auto;
+    }
+
+    #left-sidebar-resize-handle {
+        display: none;
+    }
+
+    .tab-content {
+        padding: 1rem;
+    }
+
+    .tab-content h2 {
+        font-size: 1.1rem;
+    }
+
+    #graph-pane {
+        min-height: 400px;
+        height: 400px;
+        order: 2;
+    }
+
+    #summary-pane {
+        width: 100%;
+        border-left: none;
+        border-top: 1px solid var(--border-color);
+        order: 3;
+        max-height: none;
+    }
+
+    #summary-pane h2 {
+        font-size: 1.1rem;
+    }
+
+    .summary-item {
+        padding: 12px;
+    }
+
+    .summary-item .value {
+        font-size: 1.25rem;
+    }
+
+    #input-pane {
+        padding-top: 16px;
+    }
+
+    textarea {
+        font-size: 14px;
+        padding: 10px;
+    }
+
+    button {
+        padding: 12px 16px;
+        font-size: 14px;
+        min-height: 44px; /* Touch target size */
+    }
+
+    .saved-plan-item {
+        padding: 12px;
+    }
+
+    .gemini-response-box {
+        padding: 16px;
+        font-size: 14px;
+    }
+
+    #tooltip {
+        max-width: 280px;
+        font-size: 12px;
+        padding: 10px 12px;
+    }
+}
+
+@media (max-width: 480px) {
+    header {
+        padding: 0.75rem;
+    }
+
+    header h1 {
+        font-size: 1.1rem;
+    }
+
+    .tab-btn {
+        padding: 8px 10px;
+        font-size: 12px;
+    }
+
+    .header-buttons button {
+        font-size: 11px;
+        padding: 8px 10px;
+    }
+
+    #graph-pane {
+        min-height: 300px;
+        height: 300px;
+    }
+
+    .tab-content {
+        padding: 0.75rem;
+    }
+
+    #summary-pane {
+        padding: 0.75rem;
+    }
+
+    .summary-item {
+        padding: 10px;
+    }
+
+    .summary-item .value {
+        font-size: 1.1rem;
+    }
+
+    #gemini-api-key-input-section input {
+        font-size: 14px;
+    }
 }
 
