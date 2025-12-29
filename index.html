@@ -14,7 +14,7 @@
 <header>
     <h1>Postgres Explain Visualizer</h1>
     <div class="header-buttons">
-        <button onclick="copyToClipboard(setup, event)" class="copy-btn" id="copySetupBtn">Copy Setup</button>
+        <button onclick="copyToClipboard(setup, event)" class="copy-btn" id="copySetupBtn">Copy PSQL Setup</button>
         <button onclick="copyToClipboard(explain, event)" class="copy-btn" id="copyExplainBtn">Copy Explain</button>
     </div>
 </header>
@@ -46,20 +46,29 @@
         </div>
         
         <div id="input-pane">
+            <label for="queryInput" style="font-size: 0.875rem; color: #6c757d; margin-bottom: 8px; display: block; font-weight: 500;">SQL Query</label>
+            <textarea id="queryInput" placeholder="SELECT * FROM users WHERE age > 25;" style="width: 100%; height: 100px; min-height: 80px; max-height: 150px; resize: vertical; padding: 12px; border: 2px solid var(--border-color); border-radius: 8px; font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', monospace; font-size: 13px; box-sizing: border-box; margin-bottom: 12px;"></textarea>
+            <label for="inputData" style="font-size: 0.875rem; color: #6c757d; margin-bottom: 8px; display: block; font-weight: 500;">Query Plan (JSON)</label>
             <textarea id="inputData" placeholder='[ { "Plan": { ... } } ]'></textarea>
             <button onclick="renderGraph()" style="width: 100%;">Visualize Plan</button>
         </div>
 
-        <div id="gemini-pane">
-            <h2>AI Analysis</h2>
-            <div id="gemini-api-key-section">
-                <label for="gemini-api-key" style="font-size: 0.875rem; color: #6c757d; margin-bottom: 8px; display: block; font-weight: 500;">Gemini API Key</label>
-                <input type="password" id="gemini-api-key" placeholder="Enter your Gemini API key" style="width: 100%; padding: 8px; border: 2px solid var(--border-color); border-radius: 6px; font-size: 13px; box-sizing: border-box; margin-bottom: 8px;">
-                <button onclick="saveApiKey()" class="copy-btn" style="width: 100%; margin-bottom: 12px;">Save API Key</button>
-            </div>
-            <div id="gemini-response" class="gemini-response-box">
-                <div class="empty-state">AI analysis will appear here after visualizing a plan</div>
-            </div>
+        <div id="gemini-api-key-section">
+            <label for="gemini-api-key" style="font-size: 0.875rem; color: #6c757d; margin-bottom: 8px; display: block; font-weight: 500;">Gemini API Key</label>
+            <input type="password" id="gemini-api-key" placeholder="Enter your Gemini API key" style="width: 100%; padding: 8px; border: 2px solid var(--border-color); border-radius: 6px; font-size: 13px; box-sizing: border-box; margin-bottom: 8px;">
+            <button onclick="saveApiKey()" class="copy-btn" style="width: 100%;">Save API Key</button>
+        </div>
+    </div>
+</div>
+
+<div id="gemini-pane">
+    <div id="gemini-resize-handle"></div>
+    <div id="gemini-pane-header">
+        <h2>AI Analysis</h2>
+    </div>
+    <div id="gemini-response-container">
+        <div id="gemini-response" class="gemini-response-box">
+            <div class="empty-state">AI analysis will appear here after visualizing a plan</div>
         </div>
     </div>
 </div>

@@ -59,7 +59,7 @@ function getApiKey() {
     return localStorage.getItem(GEMINI_API_KEY_STORAGE) || '';
 }
 
-async function analyzePlanWithGemini(planData) {
+async function analyzePlanWithGemini(planData, query = '') {
     const apiKey = getApiKey();
     if (!apiKey) {
         const responseBox = document.getElementById('gemini-response');
@@ -73,14 +73,17 @@ async function analyzePlanWithGemini(planData) {
     responseBox.innerHTML = '<div>Analyzing query plan with AI...</div>';
 
     try {
-        // Format the plan data for analysis
-        const planSummary = extractPlanSummary(planData);
+        // Format the full plan data as JSON
+        const planJson = JSON.stringify(planData, null, 2);
         
-        const prompt = `Analyze this PostgreSQL query execution plan and provide insights:
-
-${planSummary}
-
-Please provide:
+        let prompt = `Analyze this PostgreSQL query execution plan and provide insights:\n\n`;
+        
+        if (query && query.trim().length > 0) {
+            prompt += `SQL Query:\n\`\`\`sql\n${query}\n\`\`\`\n\n`;
+        }
+        
+        prompt += `Query Execution Plan (JSON):\n\`\`\`json\n${planJson}\n\`\`\`\n\n`;
+        prompt += `Please provide:
 1. A brief summary of what this query does
 2. Performance bottlenecks or concerns
 3. Suggestions for optimization
@@ -163,6 +166,8 @@ function extractPlanSummary(planData) {
     }
     
     traverse(rootPlan);
+
+    console.log(summary);
     
     return summary;
 }
@@ -193,18 +198,66 @@ function formatGeminiResponse(text) {
     return '<p>' + html + '</p>';
 }
 
+// Resizable Gemini pane
+const GEMINI_PANE_HEIGHT_STORAGE = 'pgviz_gemini_pane_height';
+
+function initGeminiPaneResize() {
+    const pane = document.getElementById('gemini-pane');
+    const resizeHandle = document.getElementById('gemini-resize-handle');
+    
+    // Load saved height
+    const savedHeight = localStorage.getItem(GEMINI_PANE_HEIGHT_STORAGE);
+    if (savedHeight) {
+        pane.style.height = savedHeight + 'px';
+    }
+    
+    let isResizing = false;
+    let startY = 0;
+    let startHeight = 0;
+    
+    resizeHandle.addEventListener('mousedown', (e) => {
+        isResizing = true;
+        startY = e.clientY;
+        startHeight = parseInt(window.getComputedStyle(pane).height, 10);
+        pane.style.userSelect = 'none';
+        document.body.style.cursor = 'row-resize';
+        e.preventDefault();
+    });
+    
+    document.addEventListener('mousemove', (e) => {
+        if (!isResizing) return;
+        
+        const deltaY = startY - e.clientY; // Inverted because we're resizing from top
+        const newHeight = Math.max(150, Math.min(window.innerHeight * 0.8, startHeight + deltaY));
+        pane.style.height = newHeight + 'px';
+        e.preventDefault();
+    });
+    
+    document.addEventListener('mouseup', () => {
+        if (isResizing) {
+            isResizing = false;
+            pane.style.userSelect = '';
+            document.body.style.cursor = '';
+            // Save height to localStorage
+            const currentHeight = parseInt(window.getComputedStyle(pane).height, 10);
+            localStorage.setItem(GEMINI_PANE_HEIGHT_STORAGE, currentHeight.toString());
+        }
+    });
+}
+
 function getSavedPlans() {
     const saved = localStorage.getItem(STORAGE_KEY);
     return saved ? JSON.parse(saved) : [];
 }
 
-function savePlan(planData) {
+function savePlan(planData, query = '') {
     const plans = getSavedPlans();
     const planName = `Plan ${new Date().toLocaleString()}`;
     const newPlan = {
         id: Date.now().toString(),
         name: planName,
         data: planData,
+        query: query || '',
         timestamp: new Date().toISOString()
     };
     plans.unshift(newPlan); // Add to beginning
@@ -232,6 +285,12 @@ function loadPlanFromStorage(planId, event) {
     if (plan) {
         const jsonString = typeof plan.data === 'string' ? plan.data : JSON.stringify(plan.data, null, 2);
         document.getElementById('inputData').value = jsonString;
+        // Load query if it exists
+        if (plan.query) {
+            document.getElementById('queryInput').value = plan.query;
+        } else {
+            document.getElementById('queryInput').value = '';
+        }
         renderGraph(false);
     }
     return false;
@@ -264,11 +323,15 @@ function renderSavedPlansList() {
             metaInfo = dateStr;
         }
         
+        const hasQuery = plan.query && plan.query.trim().length > 0;
+        const queryPreview = hasQuery ? plan.query.substring(0, 50) + (plan.query.length > 50 ? '...' : '') : '';
+        
         return `
             <div class="saved-plan-item" data-plan-id="${plan.id}">
                 <button class="saved-plan-delete" data-plan-id="${plan.id}" title="Delete">×</button>
                 <div class="saved-plan-name">${plan.name}</div>
                 <div class="saved-plan-meta">${metaInfo || dateStr}</div>
+                ${hasQuery ? `<div class="saved-plan-query" style="font-size: 0.75rem; color: #6c757d; margin-top: 6px; font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', monospace; font-style: italic;">${queryPreview}</div>` : ''}
             </div>
         `;
     }).join('');
@@ -319,7 +382,8 @@ function renderGraph(save = true) {
     }
     if (save) {
         // Save the plan to localStorage
-        savePlan(originalData);
+        const query = document.getElementById('queryInput').value.trim();
+        savePlan(originalData, query);
     }
 
     // Initialize Dagre Graph
@@ -493,7 +557,8 @@ function renderGraph(save = true) {
         });
 
     // Analyze plan with Gemini AI
-    analyzePlanWithGemini(originalData);
+    const query = document.getElementById('queryInput').value.trim();
+    analyzePlanWithGemini(originalData, query);
 }
 
 // Load sample data on init for demonstration
@@ -506,6 +571,10 @@ window.onload = function() {
     if (savedApiKey) {
         document.getElementById('gemini-api-key').value = savedApiKey;
     }
+    
+    // Initialize resizable Gemini pane
+    initGeminiPaneResize();
+    
     const sample = [
         {
             "Plan": {
