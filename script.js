@@ -342,9 +342,12 @@ function formatGeminiResponse(text) {
                     .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
                     .replace(/`([^`]+)`/g, '<code>$1</code>');
                 processedLines.push(`<h3>${headerText}</h3>`);
-            } else if (trimmed === '---' || trimmed === '') {
-                // Skip horizontal rules and empty lines
+            } else if (trimmed === '---') {
+                // Skip horizontal rules
                 processedLines.push('');
+            } else if (trimmed === '') {
+                // Skip empty lines completely - don't add anything
+                continue;
             } else {
                 // Regular text - process bold and code (use non-greedy and handle multiple occurrences)
                 let processedLine = trimmed
@@ -363,14 +366,46 @@ function formatGeminiResponse(text) {
     // Join lines and handle code blocks
     let html = processedLines.join('\n');
     
-    // Process code blocks (multiline)
+    // Process code blocks (multiline) - do this before other processing
     html = html.replace(/```([\s\S]*?)```/g, '<pre><code>$1</code></pre>');
     
-    // Convert line breaks to HTML
-    html = html.replace(/\n\n+/g, '</p><p>');
-    html = html.replace(/\n/g, '<br>');
+    // Remove excessive blank lines (3+ consecutive newlines become 2)
+    html = html.replace(/\n{3,}/g, '\n\n');
     
-    return '<p>' + html + '</p>';
+    // Convert double line breaks to paragraph breaks
+    html = html.replace(/\n\n/g, '</p><p>');
+    
+    // Convert remaining single line breaks to <br>, but avoid breaking paragraph structure
+    // Split by paragraph tags first to avoid replacing newlines inside them
+    const parts = html.split(/(<\/p><p>)/);
+    let result = '';
+    for (let i = 0; i < parts.length; i++) {
+        if (parts[i] === '</p><p>') {
+            result += parts[i];
+        } else {
+            result += parts[i].replace(/\n/g, '');
+        }
+    }
+    html = result;
+    
+    // Clean up any empty paragraphs or paragraphs with only whitespace/br
+    html = html.replace(/<p>\s*<\/p>/g, '');
+    html = html.replace(/<p><br>\s*<\/p>/gi, '');
+    html = html.replace(/<p>\s*<br>\s*<\/p>/gi, '');
+    
+    // Remove leading/trailing empty paragraphs
+    html = html.replace(/^(<p>\s*<\/p>)+/, '');
+    html = html.replace(/(<p>\s*<\/p>)+$/, '');
+    
+    // Ensure we have at least one paragraph wrapper
+    if (!html.trim().startsWith('<p>')) {
+        html = '<p>' + html;
+    }
+    if (!html.trim().endsWith('</p>')) {
+        html = html + '</p>';
+    }
+    
+    return html;
 }
 
 // Resizable Gemini pane
