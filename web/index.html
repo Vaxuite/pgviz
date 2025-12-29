@@ -1,0 +1,709 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PG Plan Visualizer</title>
+
+    <script src="https://d3js.org/d3.v5.min.js"></script>
+    <script src="https://dagrejs.github.io/project/dagre-d3/latest/dagre-d3.min.js"></script>
+
+    <style>
+        :root {
+            --bg-color: #f4f4f9;
+            --text-color: #333;
+            --node-bg: #fff;
+            --border-color: #ccc;
+            --accent: #2c3e50;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            margin: 0;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+        }
+
+        header {
+            background: var(--accent);
+            color: white;
+            padding: 1rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        header h1 { margin: 0; font-size: 1.2rem; }
+
+        .header-buttons {
+            display: flex;
+            gap: 5px;
+        }
+
+        #container {
+            display: flex;
+            flex: 1;
+            overflow: hidden;
+        }
+
+        /* Left Sidebar for Saved Plans */
+        #saved-plans-pane {
+            width: 250px;
+            padding: 1rem;
+            background: #fff;
+            border-right: 1px solid var(--border-color);
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            overflow-y: auto;
+        }
+
+        #saved-plans-pane h2 {
+            margin: 0 0 10px 0;
+            font-size: 1.1rem;
+            color: var(--accent);
+            border-bottom: 2px solid var(--accent);
+            padding-bottom: 5px;
+        }
+
+        .saved-plan-item {
+            padding: 10px;
+            background: var(--bg-color);
+            border-radius: 4px;
+            cursor: pointer;
+            border: 1px solid transparent;
+            transition: all 0.2s;
+            position: relative;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+
+        .saved-plan-item:hover {
+            background: #e8e8f0;
+            border-color: var(--accent);
+        }
+
+        .saved-plan-item.active {
+            background: #d4e6f1;
+            border-color: var(--accent);
+        }
+
+        .saved-plan-name {
+            font-weight: bold;
+            font-size: 0.9rem;
+            margin-bottom: 5px;
+            color: var(--accent);
+        }
+
+        .saved-plan-meta {
+            font-size: 0.75rem;
+            color: #666;
+        }
+
+        .saved-plan-delete {
+            position: absolute;
+            top: 5px;
+            right: 5px;
+            background: #e74c3c;
+            color: white;
+            border: none;
+            border-radius: 3px;
+            width: 20px;
+            height: 20px;
+            cursor: pointer;
+            font-size: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0;
+        }
+
+        .saved-plan-delete:hover {
+            background: #c0392b;
+        }
+
+        #saved-plans-list {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .empty-state {
+            text-align: center;
+            color: #999;
+            font-size: 0.85rem;
+            padding: 20px;
+        }
+
+        /* Input section in summary pane */
+        #input-pane {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            margin-top: auto;
+            padding-top: 20px;
+            border-top: 1px solid var(--border-color);
+        }
+
+        textarea {
+            width: 100%;
+            height: 150px;
+            min-height: 100px;
+            max-height: 250px;
+            resize: vertical;
+            padding: 10px;
+            border: 1px solid var(--border-color);
+            font-family: monospace;
+            font-size: 12px;
+            box-sizing: border-box;
+        }
+
+        button {
+            background: var(--accent);
+            color: white;
+            border: none;
+            padding: 10px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+
+        button:hover { background: #34495e; }
+
+        button.copy-btn {
+            background: #27ae60;
+            padding: 8px 12px;
+            font-size: 12px;
+        }
+
+        button.copy-btn:hover { background: #229954; }
+
+        button.copy-btn.copied {
+            background: #229954;
+        }
+
+        /* Summary Panel */
+        #summary-pane {
+            width: 300px;
+            padding: 1rem;
+            background: #fff;
+            border-left: 1px solid var(--border-color);
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            overflow-y: auto;
+        }
+
+        #summary-pane h2 {
+            margin: 0 0 10px 0;
+            font-size: 1.1rem;
+            color: var(--accent);
+            border-bottom: 2px solid var(--accent);
+            padding-bottom: 5px;
+        }
+
+        .summary-item {
+            padding: 10px;
+            background: var(--bg-color);
+            border-radius: 4px;
+        }
+
+        .summary-item label {
+            display: block;
+            font-size: 0.85rem;
+            color: #666;
+            margin-bottom: 5px;
+        }
+
+        .summary-item .value {
+            font-size: 1.2rem;
+            font-weight: bold;
+            color: var(--accent);
+        }
+
+        /* Graph Area */
+        #graph-pane {
+            flex: 1;
+            position: relative;
+            overflow: hidden;
+        }
+
+        svg {
+            width: 100%;
+            height: 100%;
+        }
+
+        /* D3/Dagre Styling */
+        .node rect {
+            stroke: #333;
+            fill: #fff;
+            stroke-width: 1.5px;
+        }
+
+        .edgePath path {
+            stroke: #333;
+            stroke-width: 1.5px;
+            fill: none;
+        }
+
+        .node text {
+            font-weight: 300;
+            font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+            font-size: 14px;
+        }
+
+        /* Tooltip */
+        #tooltip {
+            position: absolute;
+            opacity: 0;
+            background: white;
+            border: 1px solid #333;
+            padding: 10px;
+            border-radius: 4px;
+            pointer-events: none;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            font-size: 12px;
+            max-width: 300px;
+            z-index: 100;
+        }
+
+        .stat-bad { color: #e74c3c; font-weight: bold; }
+        .stat-good { color: #27ae60; font-weight: bold; }
+    </style>
+</head>
+<body>
+
+<header>
+    <h1>Postgres Explain Visualizer</h1>
+    <div class="header-buttons">
+        <button onclick="copyToClipboard(setup, event)" class="copy-btn" id="copySetupBtn">Copy Setup</button>
+        <button onclick="copyToClipboard(explain, event)" class="copy-btn" id="copyExplainBtn">Copy Explain</button>
+    </div>
+</header>
+
+<div id="container">
+    <div id="saved-plans-pane">
+        <h2>Saved Plans</h2>
+        <div id="saved-plans-list">
+            <div class="empty-state">No saved plans yet</div>
+        </div>
+    </div>
+
+    <div id="graph-pane">
+        <svg id="svg-canvas"><g id="svg-group"></g></svg>
+        <div id="tooltip"></div>
+    </div>
+
+    <div id="summary-pane">
+        <h2>Query Summary</h2>
+        <div id="summary-content">
+            <div class="summary-item">
+                <label>Total Duration</label>
+                <div class="value" id="total-duration">-</div>
+            </div>
+            <div class="summary-item">
+                <label>Total Rows Fetched</label>
+                <div class="value" id="total-rows">-</div>
+            </div>
+        </div>
+        
+        <div id="input-pane">
+            <textarea id="inputData" placeholder='[ { "Plan": { ... } } ]'></textarea>
+            <button onclick="renderGraph()" style="width: 100%;">Visualize Plan</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    // 1. Setup Zoom and Pan
+    const svg = d3.select("svg");
+    const inner = d3.select("#svg-group");
+    const zoom = d3.zoom().on("zoom", () => {
+        inner.attr("transform", d3.event.transform);
+    });
+    const explain = "EXPLAIN (ANALYZE, COSTS, VERBOSE, BUFFERS, FORMAT JSON) ";
+    const setup = `\pset pager off
+    \pset format unaligned
+    \pset expanded off
+    \pset columns 0`;
+    svg.call(zoom);
+
+    // Copy to clipboard function
+    async function copyToClipboard(text, event) {
+        const copyBtn = event ? event.target : document.getElementById('copyBtn');
+        const originalText = copyBtn.textContent;
+        
+        try {
+            await navigator.clipboard.writeText(text);
+            copyBtn.textContent = 'Copied!';
+            copyBtn.classList.add('copied');
+            
+            setTimeout(() => {
+                copyBtn.textContent = originalText;
+                copyBtn.classList.remove('copied');
+            }, 2000);
+        } catch (err) {
+            // Fallback for older browsers
+            const textarea = document.getElementById('inputData');
+            textarea.select();
+            document.execCommand('copy');
+            copyBtn.textContent = 'Copied!';
+            copyBtn.classList.add('copied');
+            
+            setTimeout(() => {
+                copyBtn.textContent = originalText;
+                copyBtn.classList.remove('copied');
+            }, 2000);
+        }
+    }
+
+    // Saved Plans Management
+    const STORAGE_KEY = 'pgviz_saved_plans';
+    
+    function getSavedPlans() {
+        const saved = localStorage.getItem(STORAGE_KEY);
+        return saved ? JSON.parse(saved) : [];
+    }
+    
+    function savePlan(planData) {
+        const plans = getSavedPlans();
+        const planName = `Plan ${new Date().toLocaleString()}`;
+        const newPlan = {
+            id: Date.now().toString(),
+            name: planName,
+            data: planData,
+            timestamp: new Date().toISOString()
+        };
+        plans.unshift(newPlan); // Add to beginning
+        // Keep only last 50 plans
+        const limitedPlans = plans.slice(0, 50);
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(limitedPlans));
+        renderSavedPlansList();
+    }
+    
+    function deletePlan(planId, event) {
+        event.stopPropagation(); // Prevent triggering the load action
+        const plans = getSavedPlans();
+        const filtered = plans.filter(p => p.id !== planId);
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(filtered));
+        renderSavedPlansList();
+    }
+    
+    function loadPlanFromStorage(planId, event) {
+        if (event) {
+            event.preventDefault();
+            event.stopPropagation();
+        }
+        const plans = getSavedPlans();
+        const plan = plans.find(p => p.id === planId);
+        if (plan) {
+            const jsonString = typeof plan.data === 'string' ? plan.data : JSON.stringify(plan.data, null, 2);
+            document.getElementById('inputData').value = jsonString;
+            renderGraph(false);
+        }
+        return false;
+    }
+    
+    function renderSavedPlansList() {
+        const plans = getSavedPlans();
+        const listContainer = document.getElementById('saved-plans-list');
+        
+        if (plans.length === 0) {
+            listContainer.innerHTML = '<div class="empty-state">No saved plans yet</div>';
+            return;
+        }
+        
+        listContainer.innerHTML = plans.map(plan => {
+            const date = new Date(plan.timestamp);
+            const dateStr = date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+            
+            // Try to extract some info from the plan for display
+            let metaInfo = '';
+            try {
+                const planObj = typeof plan.data === 'string' ? JSON.parse(plan.data) : plan.data;
+                const rootPlan = Array.isArray(planObj) && planObj[0]?.Plan ? planObj[0].Plan : (planObj.Plan || planObj);
+                if (rootPlan) {
+                    const totalTime = rootPlan['Actual Total Time'] || 0;
+                    const totalRows = (rootPlan['Actual Rows'] || 0) * (rootPlan['Actual Loops'] || 1);
+                    metaInfo = `${totalTime.toFixed(2)}ms • ${totalRows.toLocaleString()} rows`;
+                }
+            } catch (e) {
+                metaInfo = dateStr;
+            }
+            
+            return `
+                <div class="saved-plan-item" data-plan-id="${plan.id}">
+                    <button class="saved-plan-delete" data-plan-id="${plan.id}" title="Delete">×</button>
+                    <div class="saved-plan-name">${plan.name}</div>
+                    <div class="saved-plan-meta">${metaInfo || dateStr}</div>
+                </div>
+            `;
+        }).join('');
+        
+        // Add event listeners after rendering
+        listContainer.querySelectorAll('.saved-plan-item').forEach(item => {
+            const planId = item.getAttribute('data-plan-id');
+            item.addEventListener('click', (e) => {
+                // Don't trigger if clicking the delete button
+                if (e.target.classList.contains('saved-plan-delete')) {
+                    return;
+                }
+                e.preventDefault();
+                e.stopPropagation();
+                loadPlanFromStorage(planId, e);
+            });
+        });
+        
+        // Add delete button listeners
+        listContainer.querySelectorAll('.saved-plan-delete').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                const planId = btn.getAttribute('data-plan-id');
+                deletePlan(planId, e);
+            });
+        });
+    }
+
+    // 2. Render Function
+    function renderGraph(save = true) {
+        const input = document.getElementById('inputData').value;
+        if (!input.trim()) return alert("Please paste a JSON plan.");
+
+        let data;
+        let originalData;
+        try {
+            originalData = JSON.parse(input);
+            data = originalData;
+            // Postgres usually returns an array [ { Plan: ... } ]
+            if (Array.isArray(data) && data[0].Plan) {
+                data = data[0].Plan;
+            } else if (data.Plan) {
+                data = data.Plan; // Handle case where user pastes just the object
+            }
+        } catch (e) {
+            return alert("Invalid JSON format. Check console for details.");
+        }
+        
+        // Save the plan to localStorage
+        savePlan(originalData);
+
+        // Initialize Dagre Graph
+        const g = new dagreD3.graphlib.Graph().setGraph({});
+        g.graph().rankdir = "TB"; // Top-to-Bottom layout
+
+        // Helper to calculate "Exclusive Time"
+        // In PostgreSQL, Actual Total Time is the total time across all loop executions
+        // For exclusive time: (node total time - sum of (child total time * child loops)) * loops
+        // We multiply child times by child loops to account for how many times each child executed
+        // This ensures parent nodes correctly account for children that executed multiple times
+        function calculateExclusiveTime(node) {
+            let childTime = 0;
+            if (node.Plans) {
+                node.Plans.forEach(child => {
+                    // Multiply child's Actual Total Time by child's loops
+                    // This accounts for how many times the child executed
+                    const childTotal = (child['Actual Total Time'] || 0) * (child['Actual Loops'] || 1);
+                    childTime += childTotal;
+                });
+            }
+            
+            const nodeTotalTime = node['Actual Total Time'] || 0;
+            const loops = node['Actual Loops'] || 1;
+            
+            // Calculate exclusive time: subtract (child times * child loops), then multiply by node loops
+            // This gives us the exclusive time accounting for all loop iterations
+            const exclusive = (nodeTotalTime - childTime) * loops;
+            
+            return exclusive > 0 ? exclusive : 0;
+        }
+
+        // Get total time and max exclusive time for color scaling
+        const totalTime = data['Actual Total Time'] || 0;
+        const totalRows = (data['Actual Rows'] || 0) * (data['Actual Loops'] || 1);
+        let maxTime = 0;
+        
+        function findMax(node) {
+            const t = calculateExclusiveTime(node);
+            if (t > maxTime) maxTime = t;
+            if (node.Plans) node.Plans.forEach(findMax);
+        }
+        findMax(data);
+
+        // Update summary panel
+        document.getElementById('total-duration').textContent = totalTime.toFixed(2) + ' ms';
+        document.getElementById('total-rows').textContent = totalRows.toLocaleString();
+
+        // Recursive function to build graph
+        function traverse(node, parentId = null) {
+            const id = Math.random().toString(36).substr(2, 9);
+            const exclusiveTime = calculateExclusiveTime(node);
+
+            // Color Logic (White -> Red based on exclusive time)
+            // Using a simple linear interpolation for illustration
+            const intensity = maxTime > 0 ? (exclusiveTime / maxTime) : 0;
+            const r = 255;
+            const ga = Math.floor(255 * (1 - intensity));
+            const ba = Math.floor(255 * (1 - intensity));
+            const color = `rgb(${r},${ga},${ba})`;
+
+            // Calculate percentage of total time based on exclusive time
+            const percentage = totalTime > 0 ? ((exclusiveTime / totalTime) * 100).toFixed(1) : '0.0';
+
+            // HTML Label for the Node
+            const label = `
+                <div style="padding: 5px; text-align: center;">
+                    <strong>${node['Node Type']}</strong><br/>
+                    <span style="font-size: 0.8em">${exclusiveTime.toFixed(3)}ms</span><br/>
+                    <span style="font-size: 0.75em; color: #666;">${percentage}%</span>
+                </div>
+            `;
+
+            // Add Node
+            g.setNode(id, {
+                labelType: "html",
+                label: label,
+                rx: 5, ry: 5,
+                style: `fill: ${intensity > 0.1 ? color : '#fff'}; stroke: #333;`,
+                // Store full data for tooltip
+                customData: node,
+                exclusiveTime: exclusiveTime.toFixed(3)
+            });
+
+            // Add Edge
+            if (parentId) {
+                g.setEdge(parentId, id, {
+                    label: node['Parent Relationship'] || "",
+                    curve: d3.curveBasis
+                });
+            }
+
+            // Recurse
+            if (node.Plans) {
+                node.Plans.forEach(child => traverse(child, id));
+            }
+        }
+
+        traverse(data);
+
+        // Clear existing graph before rendering new one - remove all nodes, edges, and groups
+        inner.selectAll("*").remove();
+
+        // Reset zoom transform and inner group transform before rendering
+        svg.call(zoom.transform, d3.zoomIdentity);
+        inner.attr("transform", "");
+
+        // Remove any cached width/height from nodes to force dagre to recalculate
+        g.nodes().forEach(nodeId => {
+            const node = g.node(nodeId);
+            if (node) {
+                delete node.width;
+                delete node.height;
+            }
+        });
+
+        // Create a fresh renderer instance each time
+        const render = new dagreD3.render();
+        
+        // Render the graph - dagre will calculate layout and node sizes
+        // The render function measures HTML labels and calculates node dimensions
+        render(inner, g);
+
+        // Access graph dimensions to ensure layout is complete
+        // This forces dagre to finish its calculations
+        const graphWidth = g.graph().width;
+        const graphHeight = g.graph().height;
+
+        // Center the graph after rendering completes
+        requestAnimationFrame(() => {
+            const svgRect = svg.node().getBoundingClientRect();
+            const svgWidth = svgRect.width;
+            const initialScale = 0.75;
+            const xOffset = Math.max(0, (svgWidth - graphWidth * initialScale) / 2);
+            svg.call(zoom.transform, d3.zoomIdentity.translate(xOffset, 20).scale(initialScale));
+        });
+
+        // Setup Tooltips interactions - remove old handlers first
+        inner.selectAll("g.node")
+            .on("mouseover", null)
+            .on("mousemove", null)
+            .on("mouseout", null);
+
+        inner.selectAll("g.node")
+            .on("mouseover", function(v) {
+                const nodeData = g.node(v);
+                if (!nodeData) return;
+                const raw = nodeData.customData;
+                const tooltip = document.getElementById("tooltip");
+
+                let content = `<strong>${raw['Node Type']}</strong><hr/>`;
+                content += `Total Time: ${raw['Actual Total Time'] || 'N/A'} ms<br/>`;
+                content += `Exclusive: <b>${nodeData.exclusiveTime} ms</b><br/>`;
+                content += `Rows: ${raw['Actual Rows']} (loops: ${raw['Actual Loops']})<br/>`;
+
+                if(raw['Shared Hit Blocks']) content += `Buffers Hit: ${raw['Shared Hit Blocks']}<br/>`;
+                if(raw['Shared Read Blocks']) content += `Buffers Read: ${raw['Shared Read Blocks']}<br/>`;
+                if(raw['Filter']) content += `<br/><em>Filter: ${raw['Filter']}</em>`;
+                if(raw['Index Cond']) content += `<br/><em>Idx Cond: ${raw['Index Cond']}</em>`;
+
+                tooltip.innerHTML = content;
+                tooltip.style.opacity = 1;
+            })
+            .on("mousemove", function() {
+                const tooltip = document.getElementById("tooltip");
+                tooltip.style.left = (d3.event.pageX + 15) + "px";
+                tooltip.style.top = (d3.event.pageY - 10) + "px";
+            })
+            .on("mouseout", function() {
+                document.getElementById("tooltip").style.opacity = 0;
+            });
+    }
+
+    // Load sample data on init for demonstration
+    window.onload = function() {
+        // Load and render saved plans
+        renderSavedPlansList();
+        const sample = [
+            {
+                "Plan": {
+                    "Node Type": "Aggregate",
+                    "Strategy": "Plain",
+                    "Partial Mode": "Simple",
+                    "Parallel Aware": false,
+                    "Startup Cost": 15578.40,
+                    "Total Cost": 15578.41,
+                    "Plan Rows": 1,
+                    "Plan Width": 8,
+                    "Actual Startup Time": 25.123,
+                    "Actual Total Time": 25.124,
+                    "Actual Rows": 1,
+                    "Actual Loops": 1,
+                    "Plans": [
+                        {
+                            "Node Type": "Seq Scan",
+                            "Parent Relationship": "Outer",
+                            "Parallel Aware": false,
+                            "Relation Name": "users",
+                            "Alias": "users",
+                            "Startup Cost": 0.00,
+                            "Total Cost": 15453.00,
+                            "Plan Rows": 50160,
+                            "Plan Width": 0,
+                            "Actual Startup Time": 0.015,
+                            "Actual Total Time": 22.450,
+                            "Actual Rows": 50000,
+                            "Actual Loops": 1,
+                            "Filter": "(age > 25)"
+                        }
+                    ]
+                }
+            }
+        ];
+        document.getElementById('inputData').value = JSON.stringify(sample, null, 2);
+    };
+</script>
+
+</body>
+</html>
