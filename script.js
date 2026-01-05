@@ -129,6 +129,11 @@ function getSelectedModel() {
 // Store current plan ID for updating with Gemini response
 let currentPlanId = null;
 
+// Store conversation history and plan context
+let conversationHistory = [];
+let currentPlanData = null;
+let currentQuery = '';
+
 function generateAIAnalysis() {
     const input = document.getElementById('inputData').value;
     if (!input.trim()) {
@@ -154,43 +159,210 @@ function generateAIAnalysis() {
     currentPlanId = matchingPlan ? matchingPlan.id : null;
     
     const query = document.getElementById('queryInput').value.trim();
-    analyzePlanWithGemini(originalData, query);
+    
+    // Initialize chat with plan - restore conversation history if plan exists
+    const savedHistory = matchingPlan && matchingPlan.conversationHistory ? matchingPlan.conversationHistory : null;
+    initializeChat(originalData, query, savedHistory);
+    
+    // Only send initial analysis if there's no existing conversation
+    if (!savedHistory || savedHistory.length === 0) {
+        const initialMessage = "Analyze this PostgreSQL query execution plan and provide insights. Include: 1) A brief summary of what this query does, 2) Performance bottlenecks or concerns, 3) Suggestions for optimization, 4) Key metrics to watch. Format your response in a clear, readable way with sections.";
+        sendChatMessage(initialMessage);
+    }
 }
 
-async function analyzePlanWithGemini(planData, query = '') {
-    const apiKey = getApiKey();
-    if (!apiKey) {
-        const responseBox = document.getElementById('gemini-response');
-        responseBox.className = 'gemini-response-box error';
-        responseBox.innerHTML = '<div>Please enter and save your Gemini API key to get AI analysis.</div>';
+function initializeChat(planData, query = '', savedConversationHistory = null) {
+    // Set plan data and query
+    currentPlanData = planData;
+    currentQuery = query;
+    
+    // Restore conversation history if provided, otherwise reset
+    if (savedConversationHistory && Array.isArray(savedConversationHistory) && savedConversationHistory.length > 0) {
+        conversationHistory = savedConversationHistory;
+    } else {
+        conversationHistory = [];
+    }
+    
+    // Clear chat messages
+    const chatMessages = document.getElementById('chat-messages');
+    chatMessages.innerHTML = '';
+    
+    // Restore messages from conversation history
+    if (conversationHistory.length > 0) {
+        conversationHistory.forEach(msg => {
+            const role = msg.role === 'user' ? 'user' : 'assistant';
+            const text = msg.parts[0].text;
+            addMessageToChat(role, text, false); // false = don't scroll yet
+        });
+        // Scroll to bottom after all messages are added
+        setTimeout(() => {
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }, 100);
+    }
+    
+    // Hide empty state if we have messages
+    const emptyState = document.getElementById('chat-empty-state');
+    if (emptyState) {
+        emptyState.style.display = conversationHistory.length > 0 ? 'none' : 'block';
+    }
+}
+
+function sendChatMessage(messageText = null) {
+    const chatInput = document.getElementById('chat-input');
+    const message = messageText || chatInput.value.trim();
+    
+    if (!message) {
         return;
     }
-
-    const responseBox = document.getElementById('gemini-response');
-    responseBox.className = 'gemini-response-box loading';
-    responseBox.innerHTML = '<div>Analyzing query plan with AI...</div>';
-
-    try {
-        // Format the full plan data as JSON
-        const planJson = JSON.stringify(planData, null, 2);
-        
-        let prompt = `Analyze this PostgreSQL query execution plan and provide insights:\n\n`;
-        
-        if (query && query.trim().length > 0) {
-            prompt += `SQL Query:\n\`\`\`sql\n${query}\n\`\`\`\n\n`;
+    
+    // Check if we have a plan loaded
+    if (!currentPlanData) {
+        const input = document.getElementById('inputData').value;
+        if (!input.trim()) {
+            alert("Please visualize a plan first.");
+            return;
         }
         
-        prompt += `Query Execution Plan (JSON):\n\`\`\`json\n${planJson}\n\`\`\`\n\n`;
-        prompt += `Please provide:
-1. A brief summary of what this query does
-2. Performance bottlenecks or concerns
-3. Suggestions for optimization
-4. Key metrics to watch
+        let originalData;
+        try {
+            originalData = JSON.parse(input);
+        } catch (e) {
+            alert("Invalid JSON format. Please visualize a valid plan first.");
+            return;
+        }
+        
+        const query = document.getElementById('queryInput').value.trim();
+        initializeChat(originalData, query);
+    }
+    
+    // Clear input if this was a user message
+    if (!messageText) {
+        chatInput.value = '';
+    }
+    
+    // Hide empty state
+    const emptyState = document.getElementById('chat-empty-state');
+    if (emptyState) {
+        emptyState.style.display = 'none';
+    }
+    
+    // Add user message to chat
+    addMessageToChat('user', message);
+    
+    // Add to conversation history
+    conversationHistory.push({
+        role: 'user',
+        parts: [{ text: message }]
+    });
+    
+    // Save conversation history immediately after user message
+    if (currentPlanId) {
+        updatePlanConversationHistory(currentPlanId);
+    }
+    
+    // Send to Gemini
+    sendMessageToGemini();
+}
 
-Format your response in a clear, readable way with sections.`;
+function addMessageToChat(role, text, scroll = true) {
+    const chatMessages = document.getElementById('chat-messages');
+    const messageDiv = document.createElement('div');
+    messageDiv.className = `chat-message chat-message-${role}`;
+    
+    if (role === 'user') {
+        messageDiv.innerHTML = `
+            <div class="chat-message-content">${escapeHtml(text)}</div>
+        `;
+    } else {
+        // AI response - format it
+        messageDiv.innerHTML = `
+            <div class="chat-message-content">${formatGeminiResponse(text)}</div>
+        `;
+    }
+    
+    chatMessages.appendChild(messageDiv);
+    
+    // Scroll to bottom if requested
+    if (scroll) {
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+    }
+}
 
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+async function sendMessageToGemini() {
+    const apiKey = getApiKey();
+    if (!apiKey) {
+        addMessageToChat('assistant', 'Please enter and save your Gemini API key to get AI analysis.');
+        return;
+    }
+    
+    // Show loading indicator
+    const chatMessages = document.getElementById('chat-messages');
+    const loadingDiv = document.createElement('div');
+    loadingDiv.className = 'chat-message chat-message-assistant chat-message-loading';
+    loadingDiv.id = 'chat-loading-indicator';
+    loadingDiv.innerHTML = '<div class="chat-message-content">Thinking...</div>';
+    chatMessages.appendChild(loadingDiv);
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+    
+    try {
+        // Build the conversation context
+        const planJson = JSON.stringify(currentPlanData, null, 2);
+        
+        // Build contents array - always include plan context in the first message
+        const contents = [];
+        
+        // First message always includes the full plan context
+        if (conversationHistory.length === 1) {
+            // This is the first message, include full plan context
+            let systemPrompt = `You are analyzing a PostgreSQL query execution plan. Here is the context:\n\n`;
+            
+            if (currentQuery && currentQuery.trim().length > 0) {
+                systemPrompt += `SQL Query:\n\`\`\`sql\n${currentQuery}\n\`\`\`\n\n`;
+            }
+            
+            systemPrompt += `Query Execution Plan (JSON):\n\`\`\`json\n${planJson}\n\`\`\`\n\n`;
+            systemPrompt += `Please analyze this plan and respond to the user's questions. Always keep the plan context in mind when answering.`;
+            
+            // Combine system prompt with user's first message
+            const userMessage = conversationHistory[0].parts[0].text;
+            contents.push({
+                parts: [{ text: systemPrompt + '\n\nUser question: ' + userMessage }]
+            });
+        } else {
+            // For subsequent messages, we need to rebuild the context
+            // Include the plan context again to ensure it's available
+            let contextPrompt = `Context: We're analyzing a PostgreSQL query execution plan.\n\n`;
+            
+            if (currentQuery && currentQuery.trim().length > 0) {
+                contextPrompt += `SQL Query:\n\`\`\`sql\n${currentQuery}\n\`\`\`\n\n`;
+            }
+            
+            contextPrompt += `Query Execution Plan (JSON):\n\`\`\`json\n${planJson}\n\`\`\`\n\n`;
+            contextPrompt += `Previous conversation:\n`;
+            
+            // Add previous conversation history (last few messages)
+            const recentHistory = conversationHistory.slice(-6); // Last 6 messages (3 exchanges)
+            for (const msg of recentHistory) {
+                const role = msg.role === 'user' ? 'User' : 'Assistant';
+                contextPrompt += `${role}: ${msg.parts[0].text}\n\n`;
+            }
+            
+            contextPrompt += `\nNow respond to the user's latest question.`;
+            
+            // Get the latest user message
+            const latestUserMessage = conversationHistory[conversationHistory.length - 1].parts[0].text;
+            contents.push({
+                parts: [{ text: contextPrompt + '\n\nUser: ' + latestUserMessage }]
+            });
+        }
+        
         const selectedModel = getSelectedModel();
-        const modelName = selectedModel.replace('models/', '');
         
         const response = await fetch(
             `https://generativelanguage.googleapis.com/v1beta/${selectedModel}:generateContent?key=${apiKey}`,
@@ -200,36 +372,51 @@ Format your response in a clear, readable way with sections.`;
                     'Content-Type': 'application/json',
                 },
                 body: JSON.stringify({
-                    contents: [{
-                        parts: [{
-                            text: prompt
-                        }]
-                    }]
+                    contents: contents
                 })
             }
         );
-
+        
+        // Remove loading indicator
+        const loadingIndicator = document.getElementById('chat-loading-indicator');
+        if (loadingIndicator) {
+            loadingIndicator.remove();
+        }
+        
         if (!response.ok) {
             const errorData = await response.json();
             throw new Error(errorData.error?.message || 'Failed to get response from Gemini API');
         }
-
+        
         const data = await response.json();
         const geminiText = data.candidates[0].content.parts[0].text;
-
-        responseBox.className = 'gemini-response-box';
-        responseBox.innerHTML = `<div class="response-content">${formatGeminiResponse(geminiText)}</div>`;
         
-        // Save the Gemini response to the current plan if it exists
+        // Add AI response to chat
+        addMessageToChat('assistant', geminiText);
+        
+        // Add to conversation history
+        conversationHistory.push({
+            role: 'model',
+            parts: [{ text: geminiText }]
+        });
+        
+        // Save the full conversation history to the current plan if it exists
         if (currentPlanId) {
-            updatePlanWithGeminiResponse(currentPlanId, geminiText);
+            updatePlanConversationHistory(currentPlanId);
         }
     } catch (error) {
         console.error('Gemini API error:', error);
-        responseBox.className = 'gemini-response-box error';
-        responseBox.innerHTML = `<div>Error: ${error.message}<br><br>Make sure your API key is valid and you have access to the Gemini API.</div>`;
+        
+        // Remove loading indicator
+        const loadingIndicator = document.getElementById('chat-loading-indicator');
+        if (loadingIndicator) {
+            loadingIndicator.remove();
+        }
+        
+        addMessageToChat('assistant', `Error: ${error.message}\n\nMake sure your API key is valid and you have access to the Gemini API.`);
     }
 }
+
 
 function extractPlanSummary(planData) {
     // Extract key information from the plan for analysis
@@ -427,6 +614,26 @@ function initTabs() {
                 document.getElementById('saved-plans-tab').classList.add('active');
             } else if (targetTab === 'ai-analysis') {
                 document.getElementById('ai-analysis-tab').classList.add('active');
+                
+                // If we have a plan loaded but chat isn't initialized, initialize it
+                const input = document.getElementById('inputData').value;
+                if (input.trim() && !currentPlanData) {
+                    try {
+                        const originalData = JSON.parse(input);
+                        const query = document.getElementById('queryInput').value.trim();
+                        initializeChat(originalData, query);
+                    } catch (e) {
+                        // Invalid JSON, ignore
+                    }
+                }
+                
+                // Focus chat input after a short delay
+                setTimeout(() => {
+                    const chatInput = document.getElementById('chat-input');
+                    if (chatInput) {
+                        chatInput.focus();
+                    }
+                }, 100);
             }
         });
     });
@@ -484,7 +691,7 @@ function getSavedPlans() {
     return saved ? JSON.parse(saved) : [];
 }
 
-function savePlan(planData, query = '', geminiResponse = '') {
+function savePlan(planData, query = '', geminiResponse = '', conversationHistory = []) {
     const plans = getSavedPlans();
     const planName = `Plan ${new Date().toLocaleString()}`;
     const newPlan = {
@@ -492,7 +699,8 @@ function savePlan(planData, query = '', geminiResponse = '') {
         name: planName,
         data: planData,
         query: query || '',
-        geminiResponse: geminiResponse || '',
+        geminiResponse: geminiResponse || '', // Keep for backward compatibility
+        conversationHistory: conversationHistory || [], // New: full conversation history
         timestamp: new Date().toISOString()
     };
     plans.unshift(newPlan); // Add to beginning
@@ -506,8 +714,43 @@ function updatePlanWithGeminiResponse(planId, geminiResponse) {
     const plans = getSavedPlans();
     const planIndex = plans.findIndex(p => p.id === planId);
     if (planIndex !== -1) {
-        plans[planIndex].geminiResponse = geminiResponse;
+        plans[planIndex].geminiResponse = geminiResponse; // Keep for backward compatibility
+        // Update conversation history
+        if (!plans[planIndex].conversationHistory) {
+            plans[planIndex].conversationHistory = [];
+        }
         localStorage.setItem(STORAGE_KEY, JSON.stringify(plans));
+    }
+}
+
+function updatePlanConversationHistory(planId) {
+    const plans = getSavedPlans();
+    const planIndex = plans.findIndex(p => p.id === planId);
+    if (planIndex !== -1) {
+        // Save the full conversation history
+        plans[planIndex].conversationHistory = conversationHistory;
+        // Also update geminiResponse for backward compatibility (last AI response)
+        const lastAiResponse = conversationHistory
+            .filter(msg => msg.role === 'model')
+            .map(msg => msg.parts[0].text)
+            .pop();
+        if (lastAiResponse) {
+            plans[planIndex].geminiResponse = lastAiResponse;
+        }
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(plans));
+    }
+}
+
+function updateExistingPlan(planId, planData, query) {
+    const plans = getSavedPlans();
+    const planIndex = plans.findIndex(p => p.id === planId);
+    if (planIndex !== -1) {
+        // Update plan data and query, preserve conversation history
+        plans[planIndex].data = planData;
+        plans[planIndex].query = query || '';
+        plans[planIndex].timestamp = new Date().toISOString();
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(plans));
+        renderSavedPlansList();
     }
 }
 
@@ -538,15 +781,22 @@ function loadPlanFromStorage(planId, event) {
         }
         renderGraph(false);
         
-        // Load and display Gemini response if it exists
-        if (plan.geminiResponse) {
-            const responseBox = document.getElementById('gemini-response');
-            responseBox.className = 'gemini-response-box';
-            responseBox.innerHTML = `<div class="response-content">${formatGeminiResponse(plan.geminiResponse)}</div>`;
-        } else {
-            const responseBox = document.getElementById('gemini-response');
-            responseBox.className = 'gemini-response-box';
-            responseBox.innerHTML = '<div class="empty-state">No AI analysis available for this plan. Click "Generate AI Analysis" to create one.</div>';
+        // Initialize chat with loaded plan and restore conversation history if available
+        const savedHistory = plan.conversationHistory || null;
+        initializeChat(plan.data, plan.query || '', savedHistory);
+        
+        // Backward compatibility: if no conversationHistory but geminiResponse exists, add it
+        if (!savedHistory && plan.geminiResponse) {
+            addMessageToChat('assistant', plan.geminiResponse);
+            // Add to conversation history
+            conversationHistory.push({
+                role: 'model',
+                parts: [{ text: plan.geminiResponse }]
+            });
+            // Save it as conversation history for future loads
+            if (currentPlanId) {
+                updatePlanConversationHistory(currentPlanId);
+            }
         }
     }
     return false;
@@ -639,11 +889,31 @@ function renderGraph(save = true) {
     if (save) {
         // Save the plan to localStorage
         const query = document.getElementById('queryInput').value.trim();
-        savePlan(originalData, query);
-        // Set currentPlanId to the newly saved plan
+        // Check if this plan already exists (same data)
         const plans = getSavedPlans();
-        if (plans.length > 0) {
-            currentPlanId = plans[0].id; // Most recent plan is first
+        const inputString = typeof originalData === 'string' ? originalData : JSON.stringify(originalData);
+        const matchingPlan = plans.find(p => {
+            const planString = typeof p.data === 'string' ? p.data : JSON.stringify(p.data);
+            return planString === inputString;
+        });
+        
+        if (matchingPlan) {
+            // Update existing plan (preserve conversation history)
+            currentPlanId = matchingPlan.id;
+            const existingHistory = matchingPlan.conversationHistory || [];
+            updateExistingPlan(matchingPlan.id, originalData, query);
+            // Initialize chat with existing history
+            initializeChat(originalData, query, existingHistory);
+        } else {
+            // New plan
+            savePlan(originalData, query, '', []);
+            // Set currentPlanId to the newly saved plan
+            const updatedPlans = getSavedPlans();
+            if (updatedPlans.length > 0) {
+                currentPlanId = updatedPlans[0].id; // Most recent plan is first
+            }
+            // Initialize chat with the new plan
+            initializeChat(originalData, query);
         }
     }
 
@@ -938,6 +1208,17 @@ window.onload = function() {
     
     // Initial SVG size update
     setTimeout(updateSVGSize, 100);
+    
+    // Setup chat input Enter key handler
+    const chatInput = document.getElementById('chat-input');
+    if (chatInput) {
+        chatInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                sendChatMessage();
+            }
+        });
+    }
     
     const sample = [
         {
